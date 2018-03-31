@@ -223,6 +223,14 @@ config RTC_DRV_HYM8563
 	  This driver can also be built as a module. If so, the module
 	  will be called rtc-hym8563.
 
+config RTC_DRV_RV8803
+       tristate "Micro Crystal RV8803"
+       help
+         If you say yes here you get support for the Micro Crystal
+         RV8803 RTC chips.
+         This driver can also be built as a module. If so, the module
+         will be called rtc-rv8803.
+
 config RTC_DRV_LP8788
 	tristate "TI LP8788 RTC driver"
 	depends on MFD_LP8788
