@@ -18,6 +18,7 @@
  */
 
 #include <linux/module.h>
+#include <linux/kernel.h>
 #include <linux/clk-provider.h>
 #include <linux/i2c.h>
 #include <linux/bcd.h>
@@ -116,8 +117,27 @@ static int hym8563_rtc_read_time(struct device *dev, struct rtc_time *tm)
 	tm->tm_mday = bcd2bin(buf[3] & HYM8563_DAY_MASK);
 	tm->tm_wday = bcd2bin(buf[4] & HYM8563_WEEKDAY_MASK); /* 0 = Sun */
 	tm->tm_mon = bcd2bin(buf[5] & HYM8563_MONTH_MASK) - 1; /* 0 = Jan */
-	tm->tm_year = bcd2bin(buf[6]) + 100;
-
+//	tm->tm_year = bcd2bin(buf[6]) + 100;
+	tm->tm_year = bcd2bin(buf[6] & 0xFF);
+	if(buf[5] & 0x80)
+	{
+		tm->tm_year += 1900; 
+		printk("xxxxxx 0x80 is %d\n",tm->tm_year);
+	}
+	else
+	{	
+		tm->tm_year += 2006;
+		 printk("xxxxxx is %d\n",tm->tm_year);
+	}
+	tm->tm_year -= 1900;			
+	if(tm->tm_year < 0)		
+		tm->tm_year = 0;
+#ifdef CONFIG_USB_SERIAL_PL2303
+	tm->tm_isdst = 0;	
+#else
+	tm->tm_isdst = -1;
+#endif
+	printk("#####rtc read time###### %4d-%02d-%02d(%d) %02d:%02d:%02d\n", 1900 + tm->tm_year, tm->tm_mon + 1, tm->tm_mday, tm->tm_wday, tm->tm_hour, tm->tm_min, tm->tm_sec);
 	return 0;
 }
 
@@ -126,8 +146,13 @@ static int hym8563_rtc_set_time(struct device *dev, struct rtc_time *tm)
 	struct i2c_client *client = to_i2c_client(dev);
 	struct hym8563 *hym8563 = i2c_get_clientdata(client);
 	u8 buf[7];
+	u8 mon_day;
 	int ret;
+	printk("hym8563_rtc_set_time\n");
+	printk("######rtc set time####%4d-%02d-%02d(%d) %02d:%02d:%02d\n", 1900 + tm->tm_year, tm->tm_mon + 1, tm->tm_mday, tm->tm_wday, tm->tm_hour, tm->tm_min, tm->tm_sec);
 
+	mon_day = rtc_month_days((tm->tm_mon), tm->tm_year + 1900);
+	
 	/* Years >= 2100 are to far in the future, 19XX is to early */
 	if (tm->tm_year < 100 || tm->tm_year >= 200)
 		return -EINVAL;
@@ -164,7 +189,7 @@ static int hym8563_rtc_set_time(struct device *dev, struct rtc_time *tm)
 		return ret;
 
 	hym8563->valid = true;
-
+	printk("######rtc set time####%4d-%02d-%02d(%d) %02d:%02d:%02d\n", 1900 + tm->tm_year, tm->tm_mon + 1, tm->tm_mday, tm->tm_wday, tm->tm_hour, tm->tm_min, tm->tm_sec);
 	return 0;
 }
 
@@ -497,15 +522,15 @@ static int hym8563_init_device(struct i2c_client *client)
 #ifdef CONFIG_PM_SLEEP
 static int hym8563_suspend(struct device *dev)
 {
-	struct i2c_client *client = to_i2c_client(dev);
-	int ret;
+//	struct i2c_client *client = to_i2c_client(dev);
+//	int ret;
 
 	if (device_may_wakeup(dev)) {
-		ret = enable_irq_wake(client->irq);
-		if (ret) {
-			dev_err(dev, "enable_irq_wake failed, %d\n", ret);
-			return ret;
-		}
+//		ret = enable_irq_wake(client->irq);
+//		if (ret) {
+//			dev_err(dev, "enable_irq_wake failed, %d\n", ret);
+//			return ret;
+//		}
 	}
 
 	return 0;
@@ -513,10 +538,10 @@ static int hym8563_suspend(struct device *dev)
 
 static int hym8563_resume(struct device *dev)
 {
-	struct i2c_client *client = to_i2c_client(dev);
+//	struct i2c_client *client = to_i2c_client(dev);
 
-	if (device_may_wakeup(dev))
-		disable_irq_wake(client->irq);
+//	if (device_may_wakeup(dev))
+//		disable_irq_wake(client->irq);
 
 	return 0;
 }
@@ -529,7 +554,7 @@ static int hym8563_probe(struct i2c_client *client,
 {
 	struct hym8563 *hym8563;
 	int ret;
-
+	printk("enter=============%s\n",__func__); /*sam jiang debuged*/
 	hym8563 = devm_kzalloc(&client->dev, sizeof(*hym8563), GFP_KERNEL);
 	if (!hym8563)
 		return -ENOMEM;
@@ -549,21 +574,32 @@ static int hym8563_probe(struct i2c_client *client,
 					NULL, hym8563_irq,
 					IRQF_TRIGGER_LOW | IRQF_ONESHOT,
 					client->name, hym8563);
-	if (ret < 0) {
-		dev_err(&client->dev, "irq %d request failed, %d\n",
-			client->irq, ret);
-		return ret;
-	}
+//	if (ret < 0) {
+//		dev_err(&client->dev, "irq %d request failed, %d\n",
+//			client->irq, ret);
+//		return ret;
+//	}
 
 	/* check state of calendar information */
 	ret = i2c_smbus_read_byte_data(client, HYM8563_SEC);
 	if (ret < 0)
 		return ret;
 
+	dev_warn(&client->dev, "rtc_test, %d\n", ret);
+	hym8563->valid = (ret & HYM8563_SEC_VL);
+	dev_warn(&client->dev, "rtc information is %s\n",
+                hym8563->valid ? "valid" : "invalid");
+	if(hym8563->valid == false)
+	{
 	hym8563->valid = !(ret & HYM8563_SEC_VL);
-	dev_dbg(&client->dev, "rtc information is %s\n",
+	dev_warn(&client->dev, "####set again####rtc information is %s\n",
 		hym8563->valid ? "valid" : "invalid");
-
+	}
+//samjiang added debug
+/* platform setup code should have handled this; sigh */
+//        if (!device_can_wakeup(&client->dev))
+	device_init_wakeup(&client->dev, 1);
+//samjiang added end
 	hym8563->rtc = devm_rtc_device_register(&client->dev, client->name,
 						&hym8563_rtc_ops, THIS_MODULE);
 	if (IS_ERR(hym8563->rtc))
@@ -575,7 +611,7 @@ static int hym8563_probe(struct i2c_client *client,
 #ifdef CONFIG_COMMON_CLK
 	hym8563_clkout_register_clk(hym8563);
 #endif
-
+	printk("end of============= %s\n",__func__);
 	return 0;
 }
 
