@@ -1,0 +1,6 @@
+echo "# project_android_developer" >> README.md
+git init
+git add README.md
+git commit -m "first commit"
+git remote add origin https://github.com/jiangsai0703/project_android_developer.git
+git push -u origin master
